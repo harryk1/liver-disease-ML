@@ -1,0 +1,272 @@
+---
+title: "Predict Liver Disease"
+author: "Harcharan Kabbay"
+date: "12/12/2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(warn=-1)
+options(dplyr.summarise.inform = FALSE)
+options(tidyverse.quiet = TRUE)
+options(width=65)
+```
+
+## Introduction  
+
+This report analyzes a data set of health records to find patterns and build models that can be used to predict liver disease in a person. The data set used for analysis is available at [Kaggle Indian-Liver-Patients](https://www.kaggle.com/uciml/indian-liver-patient-records). 
+The approach is to find any correlations among columns in the data set. At a high level, following steps are performed to finalize a prediction model.  
+- Data Analysis: Inspect the data and perform any cleanup required.  
+- Data Visualization  
+- Feature selection  
+- Identify patterns and correlations  
+- Predict whether a patient has liver disease or not.  
+
+## Data Analysis  
+
+The data set contains 416 records for persons with liver disease and 167 for those without a liver disease. The data set contains records for 441 males and 142 females, which age range from 4 years to 90 years.  
+  
+Here are the data set columns and related information: -  
+Columns:  
+- Age: Age of the patient  
+- Gender: Gender of the patient  
+- Total_Bilirubin: Bilirubin is an orange-yellow pigment that occurs normally when part of your red blood cells break down.  
+- Direct_Bilirubin: This is the bilirubin once it reaches the liver and undergoes a chemical change.  
+- Alkaline_Phosphotase: Alkaline phosphatase is an enzyme you have in your liver, bile ducts, and bone.  
+- Alamine_Aminotransferase: Your body uses (Alamine Aminotransferase) ALT to break down food into energy.    
+- Aspartate_Aminotransferase: (Aspartate Aminotransferase) AST is an enzyme your liver makes  
+- Total_Protiens: The total protein test measures the total amount of two classes of proteins i.e. albumin and globulin.    
+- Albumin: Albumin’s a building block that helps your body heal.     
+- Albumin_and_Globulin_Ratio: Ratio of protiens albumin and globulin  
+- Dataset: Split the data into two sets (patient with liver disease, or no disease)  
+
+**Note**: Information on columns have been gathered from [WebMD](https://www.webmd.com)  
+
+```{r summary, echo=FALSE, message=FALSE}
+## Load Required libraries
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
+if(!require(corrplot)) install.packages("corrplot")
+if(!require(randomForest)) install.packages("randomForest")
+
+library(tidyverse)
+library(data.table)
+library(caret)
+library(gridExtra)
+library(corrplot)
+library(randomForest)
+
+## Download data set from github
+my_dir <- tempdir()
+setwd(my_dir)
+download.file("https://raw.githubusercontent.com/harryk1/liver-disease-ML/main/data/indian_liver_patient.csv","indian_liver_patient.csv")
+# Create data frame from csv
+df <- read_csv("indian_liver_patient.csv")
+
+summary(df)
+```
+
+**Data Cleaning**: Four records have missing value for column Albumin_and_Globulin_Ratio, we'll remove these records from the data set so that our results remain meaningful.
+
+```{r cleanup, message=FALSE}
+## Identify missing data
+colSums(sapply(df, is.na))
+
+## Remove 4 NA rows
+df <- na.omit(df)
+```
+ 
+ Number of records by liver disease
+```{r}
+table(df$Dataset)
+```
+
+For simplicity, we will subtract "1" from column data set to make the values 0 (for liver disease) and 1 (for no liver disease), followed by conversion to a factor vector.  
+```{r, echo=FALSE, message=FALSE}
+df <- df %>% mutate(Dataset = Dataset-1)
+df <- rename(df, Disease = Dataset)
+# table(df$Disease)
+
+df <- df %>% mutate(Disease = as.factor(Disease))
+```
+
+### Data Visualization  
+Now we can start visualizing the data. These are the graphs for values in each column just to understand the range and spread of in each column. Graphs other than Age and Gender contains a vertical line to show the avergae value in the column.  
+```{r visualization, echo=FALSE, message=FALSE}
+age_plot <- df %>% ggplot(aes(Age)) + geom_bar(stat = "count")
+
+
+g_plot <- df %>% ggplot(aes(Gender, fill=Gender)) + geom_bar(stat = "count")
+
+tb_plot <- df %>% ggplot(aes(Total_Bilirubin)) + 
+  geom_histogram(binwidth = 1, color=I("black")) +
+  geom_vline(xintercept=mean(df$Total_Bilirubin), color="red")
+
+db_plot <- df %>% ggplot(aes(Direct_Bilirubin)) + 
+  geom_histogram(binwidth = 1, color=I("cyan")) +
+  geom_vline(xintercept=mean(df$Direct_Bilirubin), color="blue")
+
+ap_plot <- df %>% ggplot(aes(Alkaline_Phosphotase)) + 
+  geom_histogram(binwidth = 30, color=I("blue")) +
+  geom_vline(xintercept=mean(df$Alkaline_Phosphotase), color="green")
+
+aa_plot <- df %>% ggplot(aes(Alamine_Aminotransferase)) + 
+  geom_histogram(binwidth = 30, color=I("red")) +
+  geom_vline(xintercept=mean(df$Alamine_Aminotransferase), color="black")
+
+asa_plot <- df %>% ggplot(aes(Aspartate_Aminotransferase)) + 
+  geom_histogram(binwidth = 60, color=I("blue")) +
+  geom_vline(xintercept=mean(df$Aspartate_Aminotransferase), color="cyan")
+
+tp_plot <- df %>% ggplot(aes(Total_Protiens)) + 
+  geom_histogram(binwidth = 0.2, color=I("black")) +
+  geom_vline(xintercept=mean(df$Total_Protiens), color="red")
+
+alb_plot <- df %>% ggplot(aes(Albumin)) + 
+  geom_histogram(binwidth = 0.2, color=I("cyan")) +
+  geom_vline(xintercept=mean(df$Albumin), color="blue")
+
+ag_ratio<- df %>% ggplot(aes(Albumin_and_Globulin_Ratio)) + 
+  geom_histogram(binwidth = 0.1, color=I("blue")) +
+  geom_vline(xintercept=mean(df$Albumin_and_Globulin_Ratio), color="red")
+
+grid.arrange(age_plot, g_plot, tb_plot, db_plot, ap_plot,
+             aa_plot, asa_plot, tp_plot, alb_plot, ag_ratio)
+```
+
+### Correlations  
+  
+Data visualization provides us some insight into what data looks like, however, we still do not know how this data is related. We will create a correlation matrix to find the strength and direction of the correlation. This can be achieved by using `cor` function to find the correlation and then plot the graph using `corrplot`.  
+
+```{r correlations, echo=FALSE, message=FALSE}
+factor_columns <- c("Gender", "Disease")
+cor_matrix <- cor(df[, !(names(df) %in% factor_columns)])
+# cor_matrix
+corrplot(cor_matrix)
+```
+
+Correlation graph explains the relationship between different fields, and also shows some high correlation pairs. We identified that columns "Albumin", "Direct_Bilirubin" and "Aspartate_Aminotransferase" are in high correlation pairs and were hence removed from further analysis.   
+```{r, echo=FALSE, message=FALSE}
+high_corr_cols <- findCorrelation(cor_matrix, cutoff = 0.75, names = TRUE)
+# high_corr_cols
+## Remove high correlated columns
+df <- df[, !(names(df) %in% high_corr_cols)]
+```
+At this stage, we have a cleaned data set with the final number of features.
+
+## Methods  
+In order to test different prediction algorithms/models, we split the data set into train and test sets with 70% to 30% ratio respectively. We will start with building the models on `train set` and then test those models using `test set`.  
+```{r split-data, echo=FALSE, message=FALSE}
+## Split data into 70% train_set and 30% test_set
+set.seed(1, sample.kind = "Rounding")
+
+test_index <-createDataPartition(df$Disease, p=0.3,list=FALSE)
+train_set <-df[-test_index,]
+test_set <- df[test_index,]
+## Train set
+# table(train_set$Disease)
+## Test set
+# table(test_set$Disease)
+```
+
+### Random Forest Model
+Random forest classification model run with a range of mtry values so as to identify the best tune mtry(no. of variables randomly sampled as candidate at each split). The best tune mtry value was identified as 1. Once the model is built based on train data, we predicted the values from test set and caluclated the accuracy using `confusionMatrix` or just finding the `mean(pred_rf == df$Disease)`, which comes out to be **71.4%**.  
+```{r randomforest, echo=FALSE, message=FALSE}
+set.seed(14, sample.kind = "Rounding")    # simulate R 3.5
+train_rf <- train(Disease ~ .,
+                  data = train_set,
+                  method = "rf",
+                  ntree = 100,
+                  tuneGrid = data.frame(mtry = seq(1:7)))
+
+#train_rf$bestTune
+ggplot(train_rf)
+
+accuracy_rf <- confusionMatrix(predict(train_rf, test_set,
+                        type = "raw"),
+                test_set$Disease)$overall["Accuracy"]
+# rf_preds <- predict(train_rf, test_set)
+# mean(rf_preds == test_set$Disease)
+```
+
+Random Forest also gives the list of variables sorted by their importance. We can understand the data in a better way by looking at it e.g. Alamine_Aminotransferase is the most important feature in determining the liver-disease in a person while gender makes no difference.  
+```{r varimp, echo=FALSE, message=FALSE}
+imp <- varImp(train_rf)
+imp
+```
+
+### GLM  
+Generalized Linear Model or GLM is chosen as a second method to create model on train set and perform the prediction on test set. First run of the `glm` was performed for all the available features using simple formula `train(Disease ~ . , method = "glm", data = train_set)`. Accuracy of glm comes out to be **70.3%**. 
+Next, we removed Gender and Albumin_and_Globulin_Ratio from the features to update the model as `train(Disease ~ . - Gender - Albumin_and_Globulin_Ratio , method = "glm", data = train_set)`and re-run. Predictions performed by updated model have an improved accuracy of **72%**.  
+```{r glm, echo=FALSE, message=FALSE}
+## Train GLM by all predictors
+set.seed(1, sample.kind = "Rounding")
+train_glm <- train(Disease ~ . , method = "glm", data = train_set)
+pred_glm <- predict(train_glm, test_set)
+accuracy_glm <- confusionMatrix(data = pred_glm, reference = test_set$Disease)$overall["Accuracy"]
+
+## Train GLM on reduced features
+set.seed(1, sample.kind = "Rounding")
+train_glm1 <- train(Disease ~ . - Gender - Albumin_and_Globulin_Ratio , method = "glm", data = train_set)
+pred_glm1 <- predict(train_glm1, test_set)
+accuracy_glm1 <- confusionMatrix(data = pred_glm1, reference = test_set$Disease)$overall["Accuracy"]
+```
+
+### KNN
+Final method for the analysis is KNN. We ran the model using a sequence of values for k so as to find the most optimized **k** which comes out to be 33.  
+
+```{r knn, echo=FALSE, message=FALSE}
+set.seed(6, sample.kind = "Rounding")
+control <- trainControl(method = "cv", number = 10, p = .9)
+train_knn <- train(Disease ~ ., method = "knn",
+                      data = train_set,
+                      tuneGrid = data.frame(k = seq(3,71,2)),
+                      trControl = control)
+ggplot(train_knn, highlight = TRUE)
+```
+
+We can also plot the accuracy graph for the sequence of values of **k** used in our knn model.    
+```{r knn_accuracy, echo=FALSE, message=FALSE}
+train_knn$results %>%
+  ggplot(aes(x = k, y = Accuracy)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(x = k,
+                    ymin = Accuracy - AccuracySD,
+                    ymax = Accuracy + AccuracySD))
+
+pred_knn <- predict(train_knn, test_set, type = "raw")
+accuracy_knn <- confusionMatrix(pred_knn, test_set$Disease)$overall["Accuracy"]
+# accuracy_knn
+```
+
+We found an accuracy of **69.7%** on test set using the KNN method.  
+
+## Results  
+So far, we trained models Random forest, GLM and KNN on train set, and then performed the predictions on test set. Here are the final results of accuracy observed for each model.
+```{r result_set, echo=FALSE, message=FALSE}
+rm(accuracy_results)
+accuracy_results <- tibble(Method = "Random Forest",
+                           Accuracy = accuracy_rf )
+accuracy_results <- bind_rows(accuracy_results, tibble(Method = "GLM - All features",
+                                                       Accuracy = accuracy_glm ))
+accuracy_results <- bind_rows(accuracy_results, tibble(Method = "GLM - Reduced features",
+                                                       Accuracy = accuracy_glm1 ))
+accuracy_results <- bind_rows(accuracy_results, tibble(Method = "KNN",
+                                                       Accuracy = accuracy_knn ))
+accuracy_results %>% knitr::kable()
+```
+
+GLM model with reduced features has the highest accuracy score of **72%**, means it can predict the liver disease with this accuracy for the given set of data. Random forest is the second most accurate in the group with accuracy of **71.4%**.   
+
+## Conclusion  
+The report covers a high level methodology to understand and analyze the patient data to find correlations and build models. Correlations are often used as a first step before exploring models, which helps us reduce the number of features. We also observed that reducing the most un-reliable features helps improve the accuracy score (e.g. in GLM where the score improved to **72%**.  
+Though, this is a very tiny data set of 579 records to build and predict models, still the method can be leveraged to build a good prediction system to aid the medical specialists to predict disease in patients. There is definitely a scope to improve the accuracy if the methods are performed on a bigger set of data. This reports exhibits a generalized method, that can be used to predict other diseases on similar sets of data.  
+
+
