@@ -47,6 +47,7 @@ df <- na.omit(df)
 str(df)
 
 ## Visualize Data
+## Create graphs for each column
 age_plot <- df %>% ggplot(aes(Age)) + geom_bar(stat = "count")
 
 
@@ -84,6 +85,7 @@ ag_ratio<- df %>% ggplot(aes(Albumin_and_Globulin_Ratio)) +
   geom_histogram(binwidth = 0.1, color=I("blue")) +
   geom_vline(xintercept=mean(df$Albumin_and_Globulin_Ratio), color="red")
 
+## Display all graphs in single grid
 grid.arrange(age_plot, g_plot, tb_plot, db_plot, ap_plot,
              aa_plot, asa_plot, tp_plot, alb_plot, ag_ratio)
 
