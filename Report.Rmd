@@ -97,7 +97,7 @@ df <- df %>% mutate(Disease = as.factor(Disease))
 ```
 
 ### Data Visualization  
-Now we can start visualizing the data. These are the graphs for values in each column just to understand the range and spread of in each column. Graphs other than Age and Gender contains a vertical line to show the avergae value in the column.  
+Next, we start visualizing the data. These are the graphs for values in each column by the no. of occurences, just to understand the range and spread of data. Graphs other than Age and Gender contains a vertical line to show the mean value in the column.  
 ```{r visualization, echo=FALSE, message=FALSE}
 age_plot <- df %>% ggplot(aes(Age)) + geom_bar(stat = "count")
 
@@ -177,26 +177,22 @@ test_set <- df[test_index,]
 
 ### Random Forest Model
 Random forest classification model run with a range of mtry values so as to identify the best tune mtry(no. of variables randomly sampled as candidate at each split). The best tune mtry value was identified as 1. Once the model is built based on train data, we predicted the values from test set and caluclated the accuracy using `confusionMatrix` or just finding the `mean(pred_rf == df$Disease)`, which comes out to be **71.4%**.  
-```{r randomforest, echo=FALSE, message=FALSE}
+```{r randomforest, echo=TRUE, message=FALSE}
 set.seed(14, sample.kind = "Rounding")    # simulate R 3.5
 train_rf <- train(Disease ~ .,
                   data = train_set,
                   method = "rf",
                   ntree = 100,
                   tuneGrid = data.frame(mtry = seq(1:7)))
-
-#train_rf$bestTune
 ggplot(train_rf)
 
 accuracy_rf <- confusionMatrix(predict(train_rf, test_set,
                         type = "raw"),
                 test_set$Disease)$overall["Accuracy"]
-# rf_preds <- predict(train_rf, test_set)
-# mean(rf_preds == test_set$Disease)
 ```
 
 Random Forest also gives the list of variables sorted by their importance. We can understand the data in a better way by looking at it e.g. Alamine_Aminotransferase is the most important feature in determining the liver-disease in a person while gender makes no difference.  
-```{r varimp, echo=FALSE, message=FALSE}
+```{r varimp, echo=TRUE, message=FALSE}
 imp <- varImp(train_rf)
 imp
 ```
@@ -204,24 +200,27 @@ imp
 ### GLM  
 Generalized Linear Model or GLM is chosen as a second method to create model on train set and perform the prediction on test set. First run of the `glm` was performed for all the available features using simple formula `train(Disease ~ . , method = "glm", data = train_set)`. Accuracy of glm comes out to be **70.3%**. 
 Next, we removed Gender and Albumin_and_Globulin_Ratio from the features to update the model as `train(Disease ~ . - Gender - Albumin_and_Globulin_Ratio , method = "glm", data = train_set)`and re-run. Predictions performed by updated model have an improved accuracy of **72%**.  
-```{r glm, echo=FALSE, message=FALSE}
+```{r glm, echo=TRUE, message=FALSE}
 ## Train GLM by all predictors
 set.seed(1, sample.kind = "Rounding")
 train_glm <- train(Disease ~ . , method = "glm", data = train_set)
 pred_glm <- predict(train_glm, test_set)
-accuracy_glm <- confusionMatrix(data = pred_glm, reference = test_set$Disease)$overall["Accuracy"]
+accuracy_glm <- confusionMatrix(data = pred_glm, 
+                              reference = test_set$Disease)$overall["Accuracy"]
 
 ## Train GLM on reduced features
 set.seed(1, sample.kind = "Rounding")
-train_glm1 <- train(Disease ~ . - Gender - Albumin_and_Globulin_Ratio , method = "glm", data = train_set)
+train_glm1 <- train(Disease ~ . - Gender - Albumin_and_Globulin_Ratio , 
+                    method = "glm", data = train_set)
 pred_glm1 <- predict(train_glm1, test_set)
-accuracy_glm1 <- confusionMatrix(data = pred_glm1, reference = test_set$Disease)$overall["Accuracy"]
+accuracy_glm1 <- confusionMatrix(data = pred_glm1, 
+                              reference = test_set$Disease)$overall["Accuracy"]
 ```
 
 ### KNN
 Final method for the analysis is KNN. We ran the model using a sequence of values for k so as to find the most optimized **k** which comes out to be 33.  
 
-```{r knn, echo=FALSE, message=FALSE}
+```{r knn, echo=TRUE, message=FALSE}
 set.seed(6, sample.kind = "Rounding")
 control <- trainControl(method = "cv", number = 10, p = .9)
 train_knn <- train(Disease ~ ., method = "knn",
